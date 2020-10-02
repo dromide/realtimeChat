@@ -3,6 +3,7 @@ const http = require("http");
 const express = require('express');
 const socketio = require('socket.io');
 const formatMessage = require('./utils/messages');
+const { userJoin, getCurrentUser, userLeave, getRoomUsers } = require('./utils/users');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,22 +17,49 @@ const botName = 'ChatCord Bot';
 io.on('connection', socket => {
     // console.log('New WS Connection...');
 
-    // Welcome current user
-    // socket.emit('message', 'Welcome to ChatCord!');
-    socket.emit('message', formatMessage(botName, 'Welcome to ChatCord!'));
+    socket.on('joinRoom', ({ username, room }) => {
+        const user = userJoin(socket.id, username, room);
 
-    // Bordacast when a ouser connects
-    socket.broadcast.emit('message', formatMessage(botName, 'A user has joined the chat'));
+        socket.join(user.room);
 
-    // Runs when client disconnects
-    socket.on('disconnect', () => {
-        io.emit('message', formatMessage(botName, 'A User has left the chat'));
+        // Welcome current user
+        // socket.emit('message', 'Welcome to ChatCord!');
+        socket.emit('message', formatMessage(botName, 'Welcome to ChatCord!'));
+
+        // Bordacast when a ouser connects
+        socket.broadcast.to(user.room).emit('message', formatMessage(botName, `${user.username} has joined the chat`));
+
+        //Send users and room info
+        io.to(user.room).emit('roomUsers', {
+            room: user.room,
+            users: getRoomUsers(user.room)
+        });
+
     });
+
+
 
     // Listen for chatMessage
     socket.on('chatMessage', msg => {
         // console.log(msg);
-        io.emit('message', formatMessage('USER', msg));
+        const user = getCurrentUser(socket.id);
+
+        io.to(user.room).emit('message', formatMessage(user.username, msg));
+    });
+
+    // Runs when client disconnects
+    socket.on('disconnect', () => {
+        const user = userLeave(socket.id);
+
+        if (user) {
+            io.to(user.room).emit('message', formatMessage(botName, `${user.username} has left the chat`));
+
+            //Send users and room info
+            io.to(user.room).emit('roomUsers', {
+                room: user.room,
+                users: getRoomUsers(user.room)
+            });
+        }
     });
 
 });
